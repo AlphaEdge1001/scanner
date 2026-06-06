@@ -193,7 +193,7 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);font-size:13
     <span class="clbl">터치범위%</span>
     <input class="cinp" type="number" id="touchPct" value="0.5" min="0.1" max="3" step="0.1">
     <div class="dvd"></div>
-    <span style="font-family:var(--mono);font-size:10px;color:var(--text3)">코인 전용 · 30분 자동스캔</span>
+    <span style="font-family:var(--mono);font-size:10px;color:var(--text3)"><span style="color:var(--blue)">코</span>인 + <span style="color:var(--orange)">주</span>식 + <span style="color:var(--yellow)">원</span>자재 전체 · 30분 자동스캔</span>
     <div class="spacer"></div>
     <button class="btn btn-b" id="scanBtn">↗ 스캔</button>
     <button class="btn btn-s" id="stopBtn" style="display:none">■ 중지</button>
@@ -342,17 +342,34 @@ $('alarmBtn').addEventListener('click',()=>{
 $('alarmPanelBtn').addEventListener('click',()=>$('alarmPanel').classList.toggle('show'));
 if('Notification'in window&&Notification.permission==='default')Notification.requestPermission();
 
-// ── 코인 전용 필터 ──
-const COMMODITIES=new Set(['XAU','XAG','XPT','XPD','WTI','BRENT','OIL','USOIL','UKOIL','NG','NATGAS','WHEAT','CORN','SOYBEAN','COFFEE','SUGAR','COTTON','COPPER','ALUM','ZINC','NICKEL','IRON']);
-function isCoin(inst){
-  if(!inst.instId.endsWith('-USDT-SWAP'))return false;
-  if(inst.category==='3')return false;
-  const ul=inst.underlying||'';
-  if(ul&&!ul.endsWith('-USDT'))return false;
-  const sym=inst.instId.replace('-USDT-SWAP','');
-  if(COMMODITIES.has(sym))return false;
-  return true;
+// ── 전체 포함 필터 (코인 + 주식 + 원자재) ──
+const STOCK_TICKERS=new Set([
+  'AAPL','TSLA','AMZN','GOOGL','GOOG','MSFT','NVDA','META','NFLX','AMD','INTC',
+  'BABA','JD','PDD','NIO','XPEV','LI','SNAP','UBER','COIN','HOOD','SOFI','PLTR',
+  'RIVN','GME','TSM','ASML','JPM','GS','BAC','WFC','C','V','MA','PYPL',
+  'DIS','XOM','CVX','JNJ','PFE','MRNA','WMT','TGT','COST','HD','LOW',
+  'BA','LMT','RTX','GE','F','GM','MSTR','MARA','RIOT','CLSK','HUT',
+  'HIMS','COHR','SMCI','ARM','DELL','HPE','IBM','ORCL','CRM','ADBE',
+  'SHOP','SQ','RBLX','SPOT','ABNB','LYFT','DASH','PINS','DKNG','ZM',
+  'SPY','QQQ','IWM','GLD','SLV','USO','TLT','HYG','ARKK','EWJ','EWY',
+  'NOW','CRWV','BAND','SENT','VANA','BARD','GEV','NOK','UMA','GLM'
+]);
+const COMMODITY_TICKERS=new Set([
+  'XAU','XAG','XPT','XPD','WTI','BRENT','OIL','USOIL','UKOIL',
+  'NG','NATGAS','WHEAT','CORN','SOYBEAN','COFFEE','SUGAR','COTTON',
+  'COPPER','ALUM','ZINC','NICKEL','IRON'
+]);
+function isAll(inst){
+  return inst.instId.endsWith('-USDT-SWAP');
 }
+function getType(inst){
+  const sym=inst.instId.replace('-USDT-SWAP','');
+  const ul=inst.underlying||'';
+  if(inst.category==='3'||STOCK_TICKERS.has(sym)||(ul&&!ul.endsWith('-USDT')))return'주';
+  if(COMMODITY_TICKERS.has(sym))return'원';
+  return'코';
+}
+const typeCache=new Map();
 function fsym(id){return id.replace('-USDT-SWAP','');}
 function fsymD(id){return id.replace('-USDT-SWAP','')+'USDT';}
 function fp(p){return p>=1000?'$'+p.toLocaleString('en-US',{maximumFractionDigits:0}):p>=1?'$'+p.toFixed(3):'$'+p.toFixed(6);}
@@ -466,7 +483,8 @@ async function runScan(){
   try{
     $('pl').textContent='심볼 로딩 중...';
     const d=await fj(`${BASE}/api/v5/public/instruments`,{instType:'SWAP'});
-    syms=d.data.filter(isCoin).map(x=>x.instId);
+    d.data.filter(isAll).forEach(inst=>typeCache.set(inst.instId,getType(inst)));
+    syms=d.data.filter(isAll).map(x=>x.instId);
   }catch(e){$('pl').textContent='오류: '+e.message;resetUI();return;}
 
   $('st-tot').textContent=syms.length;
@@ -559,11 +577,15 @@ function renderItem(r,sig,tf){
     <div class="di"><div class="di-l">신호 진입</div><div class="di-v">${since}</div></div>
   </div>`:'';
 
+  const typeLabel=typeCache.get(r.instId)||'코';
+  const typeColor=typeLabel==='코'?'var(--blue)':typeLabel==='주'?'var(--orange)':'var(--yellow)';
+
   return `<div>
     <div class="si ${cls}" onclick="tog('${key}')">
       <div class="sym-wrap">
-        <span class="sym">${displaySym}</span>
-        <button class="copy-btn" onclick="event.stopPropagation();copyText('${displaySym}')" title="복사">⎘</button>
+        <span style="font-family:var(--mono);font-size:9px;font-weight:700;color:${typeColor};flex-shrink:0">${typeLabel}</span>
+        <span class="sym">${fsymD(r.instId)}</span>
+        <button class="copy-btn" onclick="event.stopPropagation();copyText('${fsymD(r.instId)}')" title="복사">⎘</button>
       </div>
       <div class="price">${fp(r.price)}</div>
       <div class="sk">
